@@ -167,22 +167,27 @@ mount_dmg() {
     local hdi_status
     if security find-generic-password -s "$DMG_NAME" >/dev/null 2>&1; then
         echo -e "${CYAN}Using passphrase from Apple Keychain...${NC}"
-        hdiutil attach -keychain "$DMG_PATH" -mountpoint "$MOUNT_POINT"
+        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT"
         hdi_status=$?
     else
         echo -e "${YELLOW}Passphrase not found in Keychain.${NC}"
         echo -ne "${BOLD}Enter Passphrase for Keystone DMG: ${NC}"
         read -s passphrase
         echo ""
-        # Use printf to avoid echo interpreting backslashes or adding unwanted newlines
-        printf "%s" "$passphrase" | hdiutil attach -stdinpass "$DMG_PATH" -mountpoint "$MOUNT_POINT"
+        
+        if [[ -z "$passphrase" ]]; then
+            echo -e "${RED}Error: Passphrase cannot be empty.${NC}"
+            return 1
+        fi
+
+        # Passphrase with newline to stdinpass
+        printf "%s\n" "$passphrase" | hdiutil attach "$DMG_PATH" -stdinpass -mountpoint "$MOUNT_POINT"
         hdi_status=$?
         
         if [[ $hdi_status -eq 0 ]]; then
             echo -ne "\n${CYAN}Would you like to save this passphrase in your Keychain? (y/N) ${NC}"
             read -k 1 save_key
             if [[ "$save_key" == "y" ]]; then
-                # Use -s for service to match our check
                 security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U
                 echo -e "\n${GREEN}Passphrase saved to Keychain.${NC}"
             fi
