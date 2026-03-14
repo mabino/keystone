@@ -40,9 +40,25 @@ print_help() {
 
 install_keystone() {
     echo -e "${YELLOW}Installing Keystone...${NC}"
-    mkdir -p "$(dirname "$INSTALL_PATH")"
-    cp "$0" "$INSTALL_PATH"
-    chmod +x "$INSTALL_PATH"
+    mkdir -p "$(dirname "$INSTALL_PATH")" || { echo -e "${RED}Error: Failed to create directory $(dirname "$INSTALL_PATH")${NC}"; exit 1; }
+    
+    local src_file="${(%):-%x}"
+    if [[ -f "$src_file" ]]; then
+        cp "$src_file" "$INSTALL_PATH" || { echo -e "${RED}Error: Failed to copy $src_file to $INSTALL_PATH${NC}"; exit 1; }
+    else
+        # Piped installation fallback (e.g., curl | zsh)
+        echo -e "${YELLOW}Installing from GitHub...${NC}"
+        if command -v curl >/dev/null; then
+            curl -fsSL https://raw.githubusercontent.com/mabino/keystone/main/keystone -o "$INSTALL_PATH" || { echo -e "${RED}Error: Failed to download Keystone${NC}"; exit 1; }
+        elif command -v wget >/dev/null; then
+            wget -qO "$INSTALL_PATH" https://raw.githubusercontent.com/mabino/keystone/main/keystone || { echo -e "${RED}Error: Failed to download Keystone${NC}"; exit 1; }
+        else
+            echo -e "${RED}Error: Cannot install from pipe without curl or wget.${NC}"
+            exit 1
+        fi
+    fi
+
+    chmod +x "$INSTALL_PATH" || { echo -e "${RED}Error: Failed to make $INSTALL_PATH executable${NC}"; exit 1; }
     echo -e "${GREEN}Keystone installed to $INSTALL_PATH${NC}"
     exit 0
 }
@@ -197,7 +213,17 @@ remove_keys() {
 
 # --- Argument Parsing ---
 
-zmodload zsh/zparseopts
+# Load zparseopts if possible
+zmodload zsh/zparseopts 2>/dev/null || true
+
+# Check if zparseopts is available
+if ! command -v zparseopts >/dev/null; then
+    echo -e "${RED}Error: zparseopts is not available in your zsh installation.${NC}"
+    echo -e "This usually indicates a broken or incomplete zsh environment."
+    echo -e "Please check your zsh installation or run Keystone without arguments."
+    exit 1
+fi
+
 zparseopts -D -E \
     h=help -help=help \
     -install=install \
