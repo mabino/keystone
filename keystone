@@ -82,7 +82,7 @@ remove_keystone() {
 
 print_header() {
     clear
-    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager (v1.3-AUTO-UNLOCK)${NC}"
+    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager (v1.4-FINAL)${NC}"
     echo -e "${CYAN}Build Time: $(date +'%Y-%m-%d %H:%M:%S')${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
@@ -165,31 +165,22 @@ mount_dmg() {
 
     echo -e "${YELLOW}Unlocking Keystone DMG...${NC}"
     
-    local hdi_status
+    local hdi_status=1
     if security find-generic-password -s "$DMG_NAME" >/dev/null 2>&1; then
         echo -e "${CYAN}Extracting passphrase from Apple Keychain...${NC}"
         local pass
         pass=$(security find-generic-password -s "$DMG_NAME" -w 2>/dev/null)
         
-        if [[ -z "$pass" ]]; then
-            echo -e "${RED}Error: Found entry in Keychain but could not read password.${NC}"
-            security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
-            echo -e "${YELLOW}Deleted stale Keychain entry. Please re-enter passphrase.${NC}"
-            hdi_status=1 # Force fallback to manual entry
-        else
+        if [[ -n "$pass" ]]; then
             # Try to attach using the extracted password
             printf "%s" "$pass" | hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -stdinpass >/dev/null 2>&1
             hdi_status=$?
             
             if [[ $hdi_status -ne 0 ]]; then
                 echo -e "${RED}Keychain passphrase failed authentication.${NC}"
-                # If it failed, maybe the Keychain entry is wrong/stale
                 security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
-                echo -e "${YELLOW}Cleared incorrect Keychain entry.${NC}"
             fi
         fi
-    else
-        hdi_status=1 # No keychain entry
     fi
 
     # Manual Fallback / First Time
@@ -204,11 +195,7 @@ mount_dmg() {
             return 1
         fi
 
-        echo -e "${CYAN}Testing passphrase and temporary injection...${NC}"
-        # We inject it so we can use it, but also to save it if successful
-        security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U
-        sleep 0.5
-        
+        echo -e "${CYAN}Testing passphrase...${NC}"
         printf "%s" "$passphrase" | hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -stdinpass >/dev/null 2>&1
         hdi_status=$?
         
@@ -216,14 +203,11 @@ mount_dmg() {
             echo -e "${GREEN}Success!${NC}"
             echo -ne "\n${CYAN}Would you like to keep this passphrase in your Keychain? (y/N) ${NC}"
             read -k 1 save_key
-            if [[ "$save_key" != "y" ]]; then
-                security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
-                echo -e "\n${YELLOW}Passphrase removed from Keychain.${NC}"
-            else
+            if [[ "$save_key" == "y" ]]; then
+                security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U
                 echo -e "\n${GREEN}Passphrase saved to Keychain.${NC}"
             fi
         else
-            security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
             echo -e "${RED}Failed to unlock DMG (Status: $hdi_status).${NC}"
             echo -e "${RED}Please ensure the passphrase is correct.${NC}"
             return 1
@@ -254,8 +238,6 @@ list_keys() {
     fi
     
     echo -e "${CYAN}Accessing $MOUNT_POINT...${NC}"
-    
-    # Give the OS a tiny moment to settle the mount
     sleep 0.1
     
     if [[ ! -d "$MOUNT_POINT" ]]; then
@@ -296,7 +278,6 @@ pack_keys() {
     fi
 
     # Explicitly find both private and public keys
-    # Match id_* OR anything containing _id_
     local local_keys=($HOME/.ssh/(id_*|*_id_*)(N))
     if (( ${#local_keys} == 0 )); then
         echo -e "${RED}No local keys found in $HOME/.ssh/ matching 'id_*' or '*_id_*'.${NC}"
@@ -340,7 +321,6 @@ restore_keys() {
     echo -e "${YELLOW}Restoring keys to $HOME/.ssh/...${NC}"
     mkdir -p ~/.ssh
     
-    # Match id_* OR anything containing _id_
     local keys=("$MOUNT_POINT"/(id_*|*_id_*)(N))
     if (( ${#keys} == 0 )); then
         echo -e "${YELLOW}No keys found in Keystone to restore.${NC}"
@@ -373,7 +353,8 @@ restore_keys() {
     echo -e "${CYAN}Updating .ssh/config_local...${NC}"
     CONFIG_LOCAL="$HOME/.ssh/config_local"
     echo "Host *" > "$CONFIG_LOCAL"
-    for key in ~/.ssh/id_*(N); do
+    # Update config for ALL keys
+    for key in ~/.ssh/(id_*|*_id_*)(N); do
         if [[ -f "$key" && ! "$key" == *.pub ]]; then
             echo "  IdentityFile $key" >> "$CONFIG_LOCAL"
         fi
