@@ -82,6 +82,7 @@ remove_keystone() {
 print_header() {
     clear
     echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager${NC}"
+    echo -e "${CYAN}Build Time: $(date +'%Y-%m-%d %H:%M:%S')${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
 
@@ -153,30 +154,49 @@ mount_dmg() {
         return 0
     fi
     
+    if [[ ! -f "$DMG_PATH" ]]; then
+        echo -e "${RED}Error: DMG not found at $DMG_PATH${NC}"
+        echo -e "${YELLOW}Use Option [2] to create it by packing local keys.${NC}"
+        return 1
+    fi
+
     if ! authenticate; then return 1; fi
 
     echo -e "${YELLOW}Unlocking Keystone DMG...${NC}"
     
-    # We DON'T capture output here because if the passphrase is not in the Keychain,
-    # hdiutil will need to prompt for it in the terminal or GUI.
-    # Redirection can block this or swallow prompts.
-    hdiutil attach -keychain "$DMG_PATH" -mountpoint "$MOUNT_POINT"
-    local hdi_status=$?
+    local hdi_status
+    if security find-generic-password -l "$DMG_NAME" >/dev/null 2>&1; then
+        echo -e "${CYAN}Using passphrase from Apple Keychain...${NC}"
+        hdiutil attach -keychain "$DMG_PATH" -mountpoint "$MOUNT_POINT"
+        hdi_status=$?
+    else
+        echo -e "${YELLOW}Passphrase not found in Keychain.${NC}"
+        echo -ne "${BOLD}Enter Passphrase for Keystone DMG: ${NC}"
+        read -s passphrase
+        echo ""
+        echo "$passphrase" | hdiutil attach -stdinpass "$DMG_PATH" -mountpoint "$MOUNT_POINT"
+        hdi_status=$?
+        
+        if [[ $hdi_status -eq 0 ]]; then
+            echo -ne "\n${CYAN}Would you like to save this passphrase in your Keychain? (y/N) ${NC}"
+            read -k 1 save_key
+            if [[ "$save_key" == "y" ]]; then
+                security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U
+                echo -e "\n${GREEN}Passphrase saved to Keychain.${NC}"
+            fi
+        fi
+    fi
 
     if [[ $hdi_status -eq 0 ]]; then
         if [[ -d "$MOUNT_POINT" ]]; then
-            echo -e "${GREEN}Keystone unlocked and mounted at $MOUNT_POINT${NC}"
+            echo -e "${GREEN}Keystone unlocked and mounted successfully.${NC}"
             return 0
         else
-            echo -e "${RED}Error: hdiutil reported success but $MOUNT_POINT is not found.${NC}"
+            echo -e "${RED}Error: hdiutil reported success but $MOUNT_POINT is missing.${NC}"
             return 1
         fi
     else
         echo -e "${RED}Failed to unlock DMG (Status: $hdi_status).${NC}"
-        echo -e "${YELLOW}Possible reasons:${NC}"
-        echo -e "  - Passphrase not in Apple Keychain."
-        echo -e "  - Wrong passphrase provided."
-        echo -e "  - DMG is already attached elsewhere."
         return 1
     fi
 }
