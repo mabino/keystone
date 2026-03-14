@@ -1,5 +1,8 @@
 #!/usr/bin/env zsh
 
+# Keystone: Private Key Manager
+# https://github.com/mabino/keystone
+
 # Colors
 export BLUE='\033[0;34m'
 export GREEN='\033[0;32m'
@@ -13,8 +16,43 @@ ICLOUD_PATH="$HOME/Library/Mobile Documents/com~apple~CloudDocs"
 DMG_NAME="keystone.dmg"
 DMG_PATH="$ICLOUD_PATH/$DMG_NAME"
 MOUNT_POINT="/Volumes/Keystone"
+INSTALL_PATH="${XDG_BIN_HOME:-$HOME/.local/bin}/keystone"
 
 # --- Utility Functions ---
+
+print_help() {
+    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager${NC}"
+    echo -e "Usage: keystone [options]"
+    echo ""
+    echo -e "${BOLD}Options:${NC}"
+    echo -e "  -h, --help      Show this help message"
+    echo -e "  --install       Install keystone to ~/.local/bin"
+    echo -e "  --remove        Uninstall keystone from ~/.local/bin"
+    echo -e "  --list          List stored keys"
+    echo -e "  --pack          Pack local keys to iCloud"
+    echo -e "  --restore       Restore keys to this device"
+    echo -e "  --wipe          Wipe stored keys (Dangerous!)"
+    echo ""
+    echo -e "${BOLD}Examples:${NC}"
+    echo -e "  keystone        (Launch interactive menu)"
+    echo -e "  keystone --pack (Run pack and exit)"
+}
+
+install_keystone() {
+    echo -e "${YELLOW}Installing Keystone...${NC}"
+    mkdir -p "$(dirname "$INSTALL_PATH")"
+    cp "$0" "$INSTALL_PATH"
+    chmod +x "$INSTALL_PATH"
+    echo -e "${GREEN}Keystone installed to $INSTALL_PATH${NC}"
+    exit 0
+}
+
+remove_keystone() {
+    echo -e "${RED}Uninstalling Keystone...${NC}"
+    rm -f "$INSTALL_PATH"
+    echo -e "${GREEN}Keystone removed.${NC}"
+    exit 0
+}
 
 print_header() {
     clear
@@ -59,7 +97,6 @@ check_status() {
 
 authenticate() {
     echo -e "${YELLOW}Authenticating with Touch ID...${NC}"
-    # Use Swift for native Touch ID prompt
     swift -e '
 import LocalAuthentication
 let context = LAContext()
@@ -74,7 +111,6 @@ if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e
     semaphore.wait()
     exit(success ? 0 : 1)
 } else {
-    // If no biometrics, we continue (the Keychain will still prompt for password)
     exit(0) 
 }'
     local AUTH_STATUS=$?
@@ -87,7 +123,6 @@ if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e
 
 mount_dmg() {
     if [[ -d "$MOUNT_POINT" ]]; then return 0; fi
-    
     if ! authenticate; then return 1; fi
 
     echo -e "${YELLOW}Unlocking Keystone DMG...${NC}"
@@ -112,38 +147,30 @@ list_keys() {
     if ! mount_dmg; then return; fi
     echo -e "${BOLD}Stored Keys in Keystone:${NC}"
     ls -1 "$MOUNT_POINT"/*.pub 2>/dev/null | xargs -n1 basename | sed 's/\.pub//' || echo "No keys found."
-    read -k 1 -s "?Press any key to return..."
+    [[ -z "$CLI_MODE" ]] && read -k 1 -s "?Press any key to return..."
 }
 
 pack_keys() {
     echo -e "${YELLOW}Packing local keys (~/.ssh/id_*)...${NC}"
-    
-    # Create DMG if missing
     if [[ ! -f "$DMG_PATH" ]]; then
-        echo "Creating new encrypted Keystone DMG..."
         mkdir -p /tmp/keystone_tmp
         hdiutil create -size 10m -fs HFS+ -volname Keystone -encryption AES-256 -srcfolder /tmp/keystone_tmp "$DMG_PATH"
         rm -rf /tmp/keystone_tmp
     fi
-
     if ! mount_dmg; then return; fi
-    
     cp ~/.ssh/id_* "$MOUNT_POINT/" 2>/dev/null
     echo -e "${GREEN}Keys packed to iCloud!${NC}"
     unmount_dmg
-    read -k 1 -s "?Press any key to return..."
+    [[ -z "$CLI_MODE" ]] && read -k 1 -s "?Press any key to return..."
 }
 
 restore_keys() {
     if ! mount_dmg; then return; fi
-    
     echo -e "${YELLOW}Restoring keys to ~/.ssh/...${NC}"
     mkdir -p ~/.ssh
     cp "$MOUNT_POINT"/id_* ~/.ssh/ 2>/dev/null
     chmod 600 ~/.ssh/id_* 2>/dev/null
     chmod 644 ~/.ssh/id_*.pub 2>/dev/null
-    
-    # Update config_local logic
     CONFIG_LOCAL="$HOME/.ssh/config_local"
     echo "Host *" > "$CONFIG_LOCAL"
     for key in ~/.ssh/id_ed25519 ~/.ssh/id_rsa; do
@@ -151,10 +178,9 @@ restore_keys() {
             echo "  IdentityFile $key" >> "$CONFIG_LOCAL"
         fi
     done
-    
     echo -e "${GREEN}Keys restored and config_local updated!${NC}"
     unmount_dmg
-    read -k 1 -s "?Press any key to return..."
+    [[ -z "$CLI_MODE" ]] && read -k 1 -s "?Press any key to return..."
 }
 
 remove_keys() {
@@ -166,10 +192,36 @@ remove_keys() {
         echo -e "\n${GREEN}Keystone wiped.${NC}"
     fi
     unmount_dmg
-    read -k 1 -s "?Press any key to return..."
+    [[ -z "$CLI_MODE" ]] && read -k 1 -s "?Press any key to return..."
 }
 
-# --- Main Loop ---
+# --- Argument Parsing ---
+
+zmodload zsh/zparseopts
+zparseopts -D -E \
+    h=help -help=help \
+    -install=install \
+    -remove=remove \
+    -list=list \
+    -pack=pack \
+    -restore=restore \
+    -wipe=wipe
+
+if [[ -n "$help" ]]; then print_help; exit 0; fi
+if [[ -n "$install" ]]; then install_keystone; fi
+if [[ -n "$remove" ]]; then remove_keystone; fi
+
+# CLI Mode Execution
+if [[ -n "$list" || -n "$pack" || -n "$restore" || -n "$wipe" ]]; then
+    export CLI_MODE=1
+    [[ -n "$list" ]] && list_keys
+    [[ -n "$pack" ]] && pack_keys
+    [[ -n "$restore" ]] && restore_keys
+    [[ -n "$wipe" ]] && remove_keys
+    exit 0
+fi
+
+# --- Main Interactive Loop ---
 
 while true; do
     print_header

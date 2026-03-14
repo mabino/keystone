@@ -6,27 +6,40 @@ A colorful, interactive, and secure way to manage your private SSH keys across m
 - **iCloud Sync**: Uses an encrypted DMG (`keystone.dmg`) stored in your iCloud Drive.
 - **Biometric Security**: Integrated with **Touch ID** via macOS Local Authentication.
 - **Keychain Integration**: Seamlessly unlocks your DMG using your Apple Keychain.
-- **XDG Compliant**: Follows modern standards for binary and configuration locations.
+- **CLI & Interactive**: Supports both a beautiful menu and direct command-line arguments.
+- **XDG Compliant**: Installs to `~/.local/bin`.
 
-## 🚀 Installation (XDG Standard)
+## 🚀 Quick Install
 
-Install or update Keystone to your local user binary directory:
+Install directly to your user binary directory:
 
 ```bash
-mkdir -p "${XDG_BIN_HOME:-$HOME/.local/bin}" && \
-curl -fsSL https://raw.githubusercontent.com/mabino/keystone/main/keystone -o "${XDG_BIN_HOME:-$HOME/.local/bin}/keystone" && \
-chmod +x "${XDG_BIN_HOME:-$HOME/.local/bin}/keystone"
+curl -fsSL https://raw.githubusercontent.com/mabino/keystone/main/keystone | zsh -s -- --install
 ```
 
-*Note: Ensure `~/.local/bin` is in your `$PATH`.*
-
 ## 🛠 Usage
+
+### Interactive Menu
 Simply run:
 ```bash
 keystone
 ```
 
+### CLI Arguments
+| Option | Description |
+| :--- | :--- |
+| `-h`, `--help` | Show help message |
+| `--install` | Install/Update keystone to `~/.local/bin` |
+| `--remove` | Uninstall keystone |
+| `--list` | List stored keys and exit |
+| `--pack` | Pack local keys to iCloud and exit |
+| `--restore` | Restore keys to this device and exit |
+| `--wipe` | Wipe stored keys (Dangerous!) |
+
+## 🏗 Development
+This project uses **ShellCheck** via GitHub Actions to ensure script quality.
+
 ## 🗑 Removal
 ```bash
-rm "${XDG_BIN_HOME:-$HOME/.local/bin}/keystone"
+keystone --remove
 ```
