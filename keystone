@@ -82,7 +82,7 @@ remove_keystone() {
 
 print_header() {
     clear
-    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager (v1.4-FINAL)${NC}"
+    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager (v1.5-PROACTIVE)${NC}"
     echo -e "${CYAN}Build Time: $(date +'%Y-%m-%d %H:%M:%S')${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
@@ -101,7 +101,7 @@ check_status() {
     if [[ -f "$DMG_PATH" ]]; then
         echo -e "  [${GREEN}✓${NC}] Encrypted DMG: ${GREEN}Detected${NC} ($DMG_NAME)"
     else
-        echo -e "  [${YELLOW}!${NC}] Encrypted DMG: ${YELLOW}Missing${NC} (Will be created on pack)"
+        echo -e "  [${YELLOW}!${NC}] Encrypted DMG: ${YELLOW}Missing${NC}"
     fi
 
     # 3. Keychain Status
@@ -149,6 +149,22 @@ if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e
     return 0
 }
 
+init_dmg() {
+    echo -e "${YELLOW}Creating new encrypted DMG (Read/Write)...${NC}"
+    mkdir -p /tmp/keystone_tmp
+    # We let hdiutil prompt for the password so the user can confirm it (asks twice)
+    if hdiutil create -size 10m -fs HFS+ -volname Keystone -encryption AES-256 -srcfolder /tmp/keystone_tmp -format UDRW "$DMG_PATH"; then
+        rm -rf /tmp/keystone_tmp
+        echo -e "${GREEN}DMG created at $DMG_PATH${NC}"
+        echo -e "${CYAN}Note: You will be prompted for this passphrase again to mount it and save it to your Keychain.${NC}"
+        return 0
+    else
+        rm -rf /tmp/keystone_tmp
+        echo -e "${RED}Failed to create DMG.${NC}"
+        return 1
+    fi
+}
+
 mount_dmg() {
     if [[ -d "$MOUNT_POINT" ]]; then
         echo -e "${GREEN}Keystone is already unlocked and mounted.${NC}"
@@ -156,9 +172,15 @@ mount_dmg() {
     fi
     
     if [[ ! -f "$DMG_PATH" ]]; then
-        echo -e "${RED}Error: DMG not found at $DMG_PATH${NC}"
-        echo -e "${YELLOW}Expected path: $DMG_PATH${NC}"
-        return 1
+        echo -e "${YELLOW}Encrypted DMG not found at $DMG_PATH${NC}"
+        echo -ne "${CYAN}Would you like to create a new one now? (y/N) ${NC}"
+        read -k 1 create_choice
+        echo ""
+        if [[ "$create_choice" == "y" ]]; then
+            init_dmg || return 1
+        else
+            return 1
+        fi
     fi
 
     if ! authenticate; then return 1; fi
@@ -263,14 +285,6 @@ list_keys() {
 
 pack_keys() {
     echo -e "${YELLOW}Packing local keys (searching for 'id_*' or '*_id_*')...${NC}"
-    if [[ ! -f "$DMG_PATH" ]]; then
-        echo -e "${YELLOW}Creating new encrypted DMG (Read/Write)...${NC}"
-        mkdir -p /tmp/keystone_tmp
-        # Use -format UDRW to ensure it is a read/write image
-        hdiutil create -size 10m -fs HFS+ -volname Keystone -encryption AES-256 -srcfolder /tmp/keystone_tmp -format UDRW "$DMG_PATH"
-        rm -rf /tmp/keystone_tmp
-        echo -e "${GREEN}DMG created at $DMG_PATH${NC}"
-    fi
     
     if ! mount_dmg; then
         echo -e "${RED}Mount failed. Cannot pack keys.${NC}"
@@ -435,9 +449,25 @@ fi
 
 # --- Main Interactive Loop ---
 
+FIRST_RUN=1
 while true; do
     print_header
     check_status
+
+    # Proactive offer to create DMG if missing on launch
+    if [[ $FIRST_RUN -eq 1 && ! -f "$DMG_PATH" ]]; then
+        echo -e "${YELLOW}Welcome! It looks like you haven't created your Keystone DMG yet.${NC}"
+        echo -ne "${CYAN}Would you like to create it now and pack your local keys? (y/N) ${NC}"
+        read -k 1 init_choice
+        echo ""
+        if [[ "$init_choice" == "y" ]]; then
+            pack_keys
+            FIRST_RUN=0
+            continue
+        fi
+    fi
+    FIRST_RUN=0
+
     echo -e "${BOLD}Actions:${NC}"
     echo -e "  [${CYAN}1${NC}] List stored keys"
     echo -e "  [${CYAN}2${NC}] Pack local keys to iCloud"
