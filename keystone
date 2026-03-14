@@ -264,9 +264,10 @@ list_keys() {
 pack_keys() {
     echo -e "${YELLOW}Packing local keys (searching for 'id_*' or '*_id_*')...${NC}"
     if [[ ! -f "$DMG_PATH" ]]; then
-        echo -e "${YELLOW}Creating new encrypted DMG...${NC}"
+        echo -e "${YELLOW}Creating new encrypted DMG (Read/Write)...${NC}"
         mkdir -p /tmp/keystone_tmp
-        hdiutil create -size 10m -fs HFS+ -volname Keystone -encryption AES-256 -srcfolder /tmp/keystone_tmp "$DMG_PATH"
+        # Use -format UDRW to ensure it is a read/write image
+        hdiutil create -size 10m -fs HFS+ -volname Keystone -encryption AES-256 -srcfolder /tmp/keystone_tmp -format UDRW "$DMG_PATH"
         rm -rf /tmp/keystone_tmp
         echo -e "${GREEN}DMG created at $DMG_PATH${NC}"
     fi
