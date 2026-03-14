@@ -249,7 +249,7 @@ list_keys() {
 
     echo -e "${BOLD}Stored Keys in Keystone:${NC}"
     
-    local keys=("$MOUNT_POINT"/id_*.pub(N))
+    local keys=("$MOUNT_POINT"/(id_*|*_id_*).pub(N))
     if (( ${#keys} == 0 )); then
         echo -e "${YELLOW}No .pub keys found in $MOUNT_POINT.${NC}"
         echo -e "Use Option [2] to pack your local ~/.ssh/ keys into Keystone."
@@ -263,7 +263,7 @@ list_keys() {
 }
 
 pack_keys() {
-    echo -e "${YELLOW}Packing local keys (~/.ssh/id_*)...${NC}"
+    echo -e "${YELLOW}Packing local keys (searching for 'id_*' or '*_id_*')...${NC}"
     if [[ ! -f "$DMG_PATH" ]]; then
         echo -e "${YELLOW}Creating new encrypted DMG...${NC}"
         mkdir -p /tmp/keystone_tmp
@@ -279,9 +279,10 @@ pack_keys() {
     fi
 
     # Explicitly find both private and public keys
-    local local_keys=($HOME/.ssh/id_*(N))
+    # Match id_* OR anything containing _id_
+    local local_keys=($HOME/.ssh/(id_*|*_id_*)(N))
     if (( ${#local_keys} == 0 )); then
-        echo -e "${RED}No local keys found in $HOME/.ssh/ starting with 'id_'.${NC}"
+        echo -e "${RED}No local keys found in $HOME/.ssh/ matching 'id_*' or '*_id_*'.${NC}"
         unmount_dmg
         wait_for_key
         return
@@ -322,7 +323,8 @@ restore_keys() {
     echo -e "${YELLOW}Restoring keys to $HOME/.ssh/...${NC}"
     mkdir -p ~/.ssh
     
-    local keys=("$MOUNT_POINT"/id_*(N))
+    # Match id_* OR anything containing _id_
+    local keys=("$MOUNT_POINT"/(id_*|*_id_*)(N))
     if (( ${#keys} == 0 )); then
         echo -e "${YELLOW}No keys found in Keystone to restore.${NC}"
         unmount_dmg
