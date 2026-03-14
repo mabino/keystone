@@ -156,8 +156,11 @@ mount_dmg() {
     if ! authenticate; then return 1; fi
 
     echo -e "${YELLOW}Unlocking Keystone DMG...${NC}"
-    local hdi_output
-    hdi_output=$(hdiutil attach -keychain "$DMG_PATH" -mountpoint "$MOUNT_POINT" 2>&1)
+    
+    # We DON'T capture output here because if the passphrase is not in the Keychain,
+    # hdiutil will need to prompt for it in the terminal or GUI.
+    # Redirection can block this or swallow prompts.
+    hdiutil attach -keychain "$DMG_PATH" -mountpoint "$MOUNT_POINT"
     local hdi_status=$?
 
     if [[ $hdi_status -eq 0 ]]; then
@@ -166,15 +169,14 @@ mount_dmg() {
             return 0
         else
             echo -e "${RED}Error: hdiutil reported success but $MOUNT_POINT is not found.${NC}"
-            echo -e "Output: $hdi_output"
             return 1
         fi
     else
         echo -e "${RED}Failed to unlock DMG (Status: $hdi_status).${NC}"
         echo -e "${YELLOW}Possible reasons:${NC}"
         echo -e "  - Passphrase not in Apple Keychain."
+        echo -e "  - Wrong passphrase provided."
         echo -e "  - DMG is already attached elsewhere."
-        echo -e "\nError detail: $hdi_output"
         return 1
     fi
 }
