@@ -82,7 +82,7 @@ remove_keystone() {
 
 print_header() {
     clear
-    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager (v1.2-DEBUG)${NC}"
+    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager (v1.3-AUTO-UNLOCK)${NC}"
     echo -e "${CYAN}Build Time: $(date +'%Y-%m-%d %H:%M:%S')${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
@@ -167,11 +167,34 @@ mount_dmg() {
     
     local hdi_status
     if security find-generic-password -s "$DMG_NAME" >/dev/null 2>&1; then
-        echo -e "${CYAN}Using passphrase from Apple Keychain...${NC}"
-        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT"
-        hdi_status=$?
+        echo -e "${CYAN}Extracting passphrase from Apple Keychain...${NC}"
+        local pass
+        pass=$(security find-generic-password -s "$DMG_NAME" -w 2>/dev/null)
+        
+        if [[ -z "$pass" ]]; then
+            echo -e "${RED}Error: Found entry in Keychain but could not read password.${NC}"
+            security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
+            echo -e "${YELLOW}Deleted stale Keychain entry. Please re-enter passphrase.${NC}"
+            hdi_status=1 # Force fallback to manual entry
+        else
+            # Try to attach using the extracted password
+            printf "%s" "$pass" | hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -stdinpass >/dev/null 2>&1
+            hdi_status=$?
+            
+            if [[ $hdi_status -ne 0 ]]; then
+                echo -e "${RED}Keychain passphrase failed authentication.${NC}"
+                # If it failed, maybe the Keychain entry is wrong/stale
+                security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
+                echo -e "${YELLOW}Cleared incorrect Keychain entry.${NC}"
+            fi
+        fi
     else
-        echo -e "${YELLOW}Passphrase not found in Keychain.${NC}"
+        hdi_status=1 # No keychain entry
+    fi
+
+    # Manual Fallback / First Time
+    if [[ $hdi_status -ne 0 ]]; then
+        echo -e "${YELLOW}Manual passphrase entry required.${NC}"
         echo -ne "${BOLD}Enter Passphrase for Keystone DMG: ${NC}"
         read -r -s passphrase
         echo ""
@@ -181,22 +204,16 @@ mount_dmg() {
             return 1
         fi
 
-        echo -e "${CYAN}Injecting passphrase into Keychain (Temporary)...${NC}"
-        if security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U; then
-            echo -e "${GREEN}Keychain injection successful.${NC}"
-        else
-            echo -e "${RED}Keychain injection failed.${NC}"
-        fi
+        echo -e "${CYAN}Testing passphrase and temporary injection...${NC}"
+        # We inject it so we can use it, but also to save it if successful
+        security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U
+        sleep 0.5
         
-        echo -e "${CYAN}Waiting for Keychain to settle...${NC}"
-        sleep 1
-        
-        echo -e "${CYAN}Attempting to mount $DMG_PATH...${NC}"
-        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT"
+        printf "%s" "$passphrase" | hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -stdinpass >/dev/null 2>&1
         hdi_status=$?
         
         if [[ $hdi_status -eq 0 ]]; then
-            echo -e "${GREEN}Mount successful!${NC}"
+            echo -e "${GREEN}Success!${NC}"
             echo -ne "\n${CYAN}Would you like to keep this passphrase in your Keychain? (y/N) ${NC}"
             read -k 1 save_key
             if [[ "$save_key" != "y" ]]; then
@@ -206,9 +223,9 @@ mount_dmg() {
                 echo -e "\n${GREEN}Passphrase saved to Keychain.${NC}"
             fi
         else
-            # Clean up the failed password attempt from Keychain
             security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
             echo -e "${RED}Failed to unlock DMG (Status: $hdi_status).${NC}"
+            echo -e "${RED}Please ensure the passphrase is correct.${NC}"
             return 1
         fi
     fi
