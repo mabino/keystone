@@ -55,9 +55,42 @@ check_status() {
     echo ""
 }
 
+# --- Authentication ---
+
+authenticate() {
+    echo -e "${YELLOW}Authenticating with Touch ID...${NC}"
+    # Use Swift for native Touch ID prompt
+    swift -e '
+import LocalAuthentication
+let context = LAContext()
+var error: NSError?
+if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
+    let semaphore = DispatchSemaphore(value: 0)
+    var success = false
+    context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Unlock Keystone") { (s, e) in
+        success = s
+        semaphore.signal()
+    }
+    semaphore.wait()
+    exit(success ? 0 : 1)
+} else {
+    // If no biometrics, we continue (the Keychain will still prompt for password)
+    exit(0) 
+}'
+    local AUTH_STATUS=$?
+    if [[ $AUTH_STATUS -ne 0 ]]; then
+        echo -e "${RED}Authentication failed.${NC}"
+        return 1
+    fi
+    return 0
+}
+
 mount_dmg() {
     if [[ -d "$MOUNT_POINT" ]]; then return 0; fi
-    echo -e "${YELLOW}Unlocking Keystone...${NC}"
+    
+    if ! authenticate; then return 1; fi
+
+    echo -e "${YELLOW}Unlocking Keystone DMG...${NC}"
     if hdiutil attach -keychain "$DMG_PATH" -mountpoint "$MOUNT_POINT"; then
         echo -e "${GREEN}Keystone unlocked!${NC}"
         return 0
