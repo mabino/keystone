@@ -52,15 +52,16 @@ install_keystone() {
     echo -e "${YELLOW}Installing Keystone...${NC}"
     mkdir -p "$(dirname "$INSTALL_PATH")" || { echo -e "${RED}Error: Failed to create directory $(dirname "$INSTALL_PATH")${NC}"; exit 1; }
     
-    if [[ -f "$SOURCE_FILE" ]]; then
+    if [[ -f "$SOURCE_FILE" && "$SOURCE_FILE" != "zsh" && "$SOURCE_FILE" != "sh" ]]; then
         cp "$SOURCE_FILE" "$INSTALL_PATH" || { echo -e "${RED}Error: Failed to copy $SOURCE_FILE to $INSTALL_PATH${NC}"; exit 1; }
     else
         # Piped installation fallback (e.g., curl | zsh)
-        echo -e "${YELLOW}Installing from GitHub...${NC}"
+        echo -e "${YELLOW}Installing from GitHub (Cache-busting)...${NC}"
+        local remote_url="https://raw.githubusercontent.com/mabino/keystone/main/keystone?cb=$(date +%s)"
         if command -v curl >/dev/null; then
-            curl -fsSL https://raw.githubusercontent.com/mabino/keystone/main/keystone -o "$INSTALL_PATH" || { echo -e "${RED}Error: Failed to download Keystone${NC}"; exit 1; }
+            curl -fsSL "$remote_url" -o "$INSTALL_PATH" || { echo -e "${RED}Error: Failed to download Keystone${NC}"; exit 1; }
         elif command -v wget >/dev/null; then
-            wget -qO "$INSTALL_PATH" https://raw.githubusercontent.com/mabino/keystone/main/keystone || { echo -e "${RED}Error: Failed to download Keystone${NC}"; exit 1; }
+            wget -qO "$INSTALL_PATH" "$remote_url" || { echo -e "${RED}Error: Failed to download Keystone${NC}"; exit 1; }
         else
             echo -e "${RED}Error: Cannot install from pipe without curl or wget.${NC}"
             exit 1
@@ -81,7 +82,7 @@ remove_keystone() {
 
 print_header() {
     clear
-    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager (v1.1-INJECTION)${NC}"
+    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager (v1.2-DEBUG)${NC}"
     echo -e "${CYAN}Build Time: $(date +'%Y-%m-%d %H:%M:%S')${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
@@ -156,7 +157,7 @@ mount_dmg() {
     
     if [[ ! -f "$DMG_PATH" ]]; then
         echo -e "${RED}Error: DMG not found at $DMG_PATH${NC}"
-        echo -e "${YELLOW}Use Option [2] to create it by packing local keys.${NC}"
+        echo -e "${YELLOW}Expected path: $DMG_PATH${NC}"
         return 1
     fi
 
@@ -167,7 +168,7 @@ mount_dmg() {
     local hdi_status
     if security find-generic-password -s "$DMG_NAME" >/dev/null 2>&1; then
         echo -e "${CYAN}Using passphrase from Apple Keychain...${NC}"
-        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -quiet
+        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT"
         hdi_status=$?
     else
         echo -e "${YELLOW}Passphrase not found in Keychain.${NC}"
@@ -180,25 +181,27 @@ mount_dmg() {
             return 1
         fi
 
-        # KEYCHAIN INJECTION METHOD:
-        # We temporarily add the password to the Keychain so hdiutil can find it natively.
-        # This is the most robust way to handle passphrases on macOS.
-        security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U
+        echo -e "${CYAN}Injecting passphrase into Keychain (Temporary)...${NC}"
+        if security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U; then
+            echo -e "${GREEN}Keychain injection successful.${NC}"
+        else
+            echo -e "${RED}Keychain injection failed.${NC}"
+        fi
         
-        # Give the Keychain a moment to register the change
+        echo -e "${CYAN}Waiting for Keychain to settle...${NC}"
         sleep 1
         
-        echo -e "${CYAN}Attempting to mount with provided passphrase...${NC}"
-        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -quiet
+        echo -e "${CYAN}Attempting to mount $DMG_PATH...${NC}"
+        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT"
         hdi_status=$?
         
         if [[ $hdi_status -eq 0 ]]; then
-            echo -e "${GREEN}Success!${NC}"
-            echo -ne "\n${CYAN}Would you like to keep this passphrase in your Keychain for future use? (y/N) ${NC}"
+            echo -e "${GREEN}Mount successful!${NC}"
+            echo -ne "\n${CYAN}Would you like to keep this passphrase in your Keychain? (y/N) ${NC}"
             read -k 1 save_key
             if [[ "$save_key" != "y" ]]; then
                 security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
-                echo -e "\n${YELLOW}Passphrase removed from Keychain (it will stay mounted until you exit).${NC}"
+                echo -e "\n${YELLOW}Passphrase removed from Keychain.${NC}"
             else
                 echo -e "\n${GREEN}Passphrase saved to Keychain.${NC}"
             fi
@@ -206,13 +209,12 @@ mount_dmg() {
             # Clean up the failed password attempt from Keychain
             security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
             echo -e "${RED}Failed to unlock DMG (Status: $hdi_status).${NC}"
-            echo -e "${RED}Please ensure the passphrase is correct.${NC}"
             return 1
         fi
     fi
 
     if [[ $hdi_status -eq 0 && -d "$MOUNT_POINT" ]]; then
-        echo -e "${GREEN}Keystone unlocked and mounted successfully.${NC}"
+        echo -e "${GREEN}Keystone ready at $MOUNT_POINT${NC}"
         return 0
     else
         return 1
