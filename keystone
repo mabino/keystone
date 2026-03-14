@@ -167,7 +167,7 @@ mount_dmg() {
     local hdi_status
     if security find-generic-password -s "$DMG_NAME" >/dev/null 2>&1; then
         echo -e "${CYAN}Using passphrase from Apple Keychain...${NC}"
-        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT"
+        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -quiet
         hdi_status=$?
     else
         echo -e "${YELLOW}Passphrase not found in Keychain.${NC}"
@@ -180,30 +180,38 @@ mount_dmg() {
             return 1
         fi
 
-        # hdiutil -stdinpass expects a NULL-TERMINATED string
-        printf "%s\0" "$passphrase" | hdiutil attach "$DMG_PATH" -stdinpass -mountpoint "$MOUNT_POINT"
+        # KEYCHAIN INJECTION METHOD:
+        # We temporarily add the password to the Keychain so hdiutil can find it natively.
+        # This is the most robust way to handle passphrases on macOS.
+        security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U
+        
+        echo -e "${CYAN}Attempting to mount with provided passphrase...${NC}"
+        hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -quiet
         hdi_status=$?
         
         if [[ $hdi_status -eq 0 ]]; then
-            echo -ne "\n${CYAN}Would you like to save this passphrase in your Keychain? (y/N) ${NC}"
+            echo -e "${GREEN}Success!${NC}"
+            echo -ne "\n${CYAN}Would you like to keep this passphrase in your Keychain for future use? (y/N) ${NC}"
             read -k 1 save_key
-            if [[ "$save_key" == "y" ]]; then
-                security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U
+            if [[ "$save_key" != "y" ]]; then
+                security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
+                echo -e "\n${YELLOW}Passphrase removed from Keychain (it will stay mounted until you exit).${NC}"
+            else
                 echo -e "\n${GREEN}Passphrase saved to Keychain.${NC}"
             fi
+        else
+            # Clean up the failed password attempt from Keychain
+            security delete-generic-password -s "$DMG_NAME" >/dev/null 2>&1
+            echo -e "${RED}Failed to unlock DMG (Status: $hdi_status).${NC}"
+            echo -e "${RED}Please ensure the passphrase is correct.${NC}"
+            return 1
         fi
     fi
 
-    if [[ $hdi_status -eq 0 ]]; then
-        if [[ -d "$MOUNT_POINT" ]]; then
-            echo -e "${GREEN}Keystone unlocked and mounted successfully.${NC}"
-            return 0
-        else
-            echo -e "${RED}Error: hdiutil reported success but $MOUNT_POINT is missing.${NC}"
-            return 1
-        fi
+    if [[ $hdi_status -eq 0 && -d "$MOUNT_POINT" ]]; then
+        echo -e "${GREEN}Keystone unlocked and mounted successfully.${NC}"
+        return 0
     else
-        echo -e "${RED}Failed to unlock DMG (Status: $hdi_status).${NC}"
         return 1
     fi
 }
