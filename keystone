@@ -172,7 +172,7 @@ mount_dmg() {
     else
         echo -e "${YELLOW}Passphrase not found in Keychain.${NC}"
         echo -ne "${BOLD}Enter Passphrase for Keystone DMG: ${NC}"
-        read -s passphrase
+        read -r -s passphrase
         echo ""
         
         if [[ -z "$passphrase" ]]; then
@@ -180,8 +180,8 @@ mount_dmg() {
             return 1
         fi
 
-        # Passphrase with newline to stdinpass
-        printf "%s\n" "$passphrase" | hdiutil attach "$DMG_PATH" -stdinpass -mountpoint "$MOUNT_POINT"
+        # hdiutil -stdinpass expects a NULL-TERMINATED string
+        printf "%s\0" "$passphrase" | hdiutil attach "$DMG_PATH" -stdinpass -mountpoint "$MOUNT_POINT"
         hdi_status=$?
         
         if [[ $hdi_status -eq 0 ]]; then
