@@ -164,11 +164,15 @@ unmount_dmg() {
 list_keys() {
     if ! mount_dmg; then return; fi
     echo -e "${BOLD}Stored Keys in Keystone:${NC}"
-    local keys=("$MOUNT_POINT"/id_*.pub(N))
-    if (( ${#keys} == 0 )); then
+    
+    # Use a more explicit check for files
+    local keys
+    keys=($(ls "$MOUNT_POINT"/id_*.pub 2>/dev/null))
+    
+    if [[ ${#keys[@]} -eq 0 ]]; then
         echo -e "${YELLOW}No keys found in Keystone.${NC}"
     else
-        for key in $keys; do
+        for key in "${keys[@]}"; do
             basename "$key" | sed 's/\.pub//'
         done
     fi
@@ -183,8 +187,28 @@ pack_keys() {
         rm -rf /tmp/keystone_tmp
     fi
     if ! mount_dmg; then return; fi
-    cp -n ~/.ssh/id_* "$MOUNT_POINT/" 2>/dev/null
-    echo -e "${GREEN}Keys packed to iCloud!${NC}"
+
+    local local_keys=($HOME/.ssh/id_*(N))
+    if (( ${#local_keys} == 0 )); then
+        echo -e "${YELLOW}No local keys found in ~/.ssh/ to pack.${NC}"
+        unmount_dmg
+        [[ -z "$CLI_MODE" ]] && read -k 1 -s "?Press any key to return..."
+        return
+    fi
+
+    local packed=0
+    local skipped=0
+    for key in $local_keys; do
+        local filename=$(basename "$key")
+        local target="$MOUNT_POINT/$filename"
+        if [[ -f "$target" ]]; then
+            ((skipped++))
+        else
+            cp "$key" "$target" && ((packed++))
+        fi
+    done
+
+    echo -e "${GREEN}Keys packed to iCloud! ($packed packed, $skipped already present)${NC}"
     unmount_dmg
     [[ -z "$CLI_MODE" ]] && read -k 1 -s "?Press any key to return..."
 }
