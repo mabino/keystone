@@ -156,16 +156,25 @@ mount_dmg() {
     if ! authenticate; then return 1; fi
 
     echo -e "${YELLOW}Unlocking Keystone DMG...${NC}"
-    if hdiutil attach -keychain "$DMG_PATH" -mountpoint "$MOUNT_POINT" 2>&1; then
+    local hdi_output
+    hdi_output=$(hdiutil attach -keychain "$DMG_PATH" -mountpoint "$MOUNT_POINT" 2>&1)
+    local hdi_status=$?
+
+    if [[ $hdi_status -eq 0 ]]; then
         if [[ -d "$MOUNT_POINT" ]]; then
             echo -e "${GREEN}Keystone unlocked and mounted at $MOUNT_POINT${NC}"
             return 0
         else
             echo -e "${RED}Error: hdiutil reported success but $MOUNT_POINT is not found.${NC}"
+            echo -e "Output: $hdi_output"
             return 1
         fi
     else
-        echo -e "${RED}Failed to unlock DMG. Please check if the passphrase is in your Keychain.${NC}"
+        echo -e "${RED}Failed to unlock DMG (Status: $hdi_status).${NC}"
+        echo -e "${YELLOW}Possible reasons:${NC}"
+        echo -e "  - Passphrase not in Apple Keychain."
+        echo -e "  - DMG is already attached elsewhere."
+        echo -e "\nError detail: $hdi_output"
         return 1
     fi
 }
@@ -180,18 +189,33 @@ unmount_dmg() {
 
 list_keys() {
     if ! mount_dmg; then 
+        echo -e "${RED}Mount failed. Cannot list keys.${NC}"
         wait_for_key
         return
     fi
+    
+    echo -e "${CYAN}Accessing $MOUNT_POINT...${NC}"
+    
+    # Give the OS a tiny moment to settle the mount
+    sleep 0.1
+    
+    if [[ ! -d "$MOUNT_POINT" ]]; then
+        echo -e "${RED}Error: Mount point $MOUNT_POINT vanished!${NC}"
+        wait_for_key
+        return
+    fi
+
     echo -e "${BOLD}Stored Keys in Keystone:${NC}"
     
     local keys=("$MOUNT_POINT"/id_*.pub(N))
     if (( ${#keys} == 0 )); then
-        echo -e "${YELLOW}No keys found in Keystone.${NC}"
+        echo -e "${YELLOW}No .pub keys found in $MOUNT_POINT.${NC}"
+        echo -e "Use Option [2] to pack your local ~/.ssh/ keys into Keystone."
     else
         for key in $keys; do
-            basename "$key" | sed 's/\.pub//'
+            echo -e "  [${GREEN}🔑${NC}] $(basename "$key" | sed 's/\.pub//')"
         done
+        echo -e "\n${CYAN}Found ${#keys} key(s).${NC}"
     fi
     wait_for_key
 }
@@ -207,48 +231,60 @@ pack_keys() {
     fi
     
     if ! mount_dmg; then
+        echo -e "${RED}Mount failed. Cannot pack keys.${NC}"
         wait_for_key
         return
     fi
 
+    # Explicitly find both private and public keys
     local local_keys=($HOME/.ssh/id_*(N))
     if (( ${#local_keys} == 0 )); then
-        echo -e "${YELLOW}No local keys found in ~/.ssh/ to pack.${NC}"
+        echo -e "${RED}No local keys found in $HOME/.ssh/ starting with 'id_'.${NC}"
         unmount_dmg
         wait_for_key
         return
     fi
 
+    echo -e "${CYAN}Found ${#local_keys} local key files to pack.${NC}"
     local packed=0
     local skipped=0
     for key in $local_keys; do
         local filename=$(basename "$key")
         local target="$MOUNT_POINT/$filename"
         if [[ -f "$target" ]]; then
+            echo -e "  [${YELLOW}○${NC}] Skipping $filename (already in Keystone)"
             ((skipped++))
         else
-            cp "$key" "$target" && ((packed++))
+            echo -ne "  [${CYAN}→${NC}] Packing $filename... "
+            if cp "$key" "$target"; then
+                echo -e "${GREEN}Done${NC}"
+                ((packed++))
+            else
+                echo -e "${RED}Failed${NC}"
+            fi
         fi
     done
 
-    echo -e "${GREEN}Keys packed to iCloud! ($packed packed, $skipped already present)${NC}"
+    echo -e "\n${GREEN}Success: $packed packed, $skipped already present.${NC}"
     unmount_dmg
     wait_for_key
 }
 
 restore_keys() {
     if ! mount_dmg; then
+        echo -e "${RED}Mount failed. Cannot restore keys.${NC}"
         wait_for_key
         return
     fi
-    echo -e "${YELLOW}Restoring keys to ~/.ssh/...${NC}"
+    
+    echo -e "${YELLOW}Restoring keys to $HOME/.ssh/...${NC}"
     mkdir -p ~/.ssh
     
     local keys=("$MOUNT_POINT"/id_*(N))
     if (( ${#keys} == 0 )); then
         echo -e "${YELLOW}No keys found in Keystone to restore.${NC}"
         unmount_dmg
-        [[ -z "$CLI_MODE" ]] && read -k 1 -s "?Press any key to return..."
+        wait_for_key
         return
     fi
 
@@ -258,16 +294,22 @@ restore_keys() {
         local filename=$(basename "$key")
         local target="$HOME/.ssh/$filename"
         if [[ -f "$target" ]]; then
-            echo -e "  [${YELLOW}!${NC}] Skipping $filename (already exists)"
+            echo -e "  [${YELLOW}○${NC}] Skipping $filename (already exists locally)"
             ((skipped++))
         else
-            cp "$key" "$target"
-            chmod $([[ "$filename" == *.pub ]] && echo 644 || echo 600) "$target"
-            ((restored++))
+            echo -ne "  [${CYAN}→${NC}] Restoring $filename... "
+            if cp "$key" "$target"; then
+                chmod $([[ "$filename" == *.pub ]] && echo 644 || echo 600) "$target"
+                echo -e "${GREEN}Done${NC}"
+                ((restored++))
+            else
+                echo -e "${RED}Failed${NC}"
+            fi
         fi
     done
 
     # Update config_local
+    echo -e "${CYAN}Updating .ssh/config_local...${NC}"
     CONFIG_LOCAL="$HOME/.ssh/config_local"
     echo "Host *" > "$CONFIG_LOCAL"
     for key in ~/.ssh/id_*(N); do
@@ -283,6 +325,7 @@ restore_keys() {
 
 remove_keys() {
     if ! mount_dmg; then
+        echo -e "${RED}Mount failed. Cannot wipe keys.${NC}"
         wait_for_key
         return
     fi
