@@ -1,5 +1,8 @@
 #!/usr/bin/env zsh
 
+# Capture script source path as early as possible
+SOURCE_FILE="${(%):-%x}"
+
 # Keystone: Private Key Manager
 # https://github.com/mabino/keystone
 
@@ -42,9 +45,8 @@ install_keystone() {
     echo -e "${YELLOW}Installing Keystone...${NC}"
     mkdir -p "$(dirname "$INSTALL_PATH")" || { echo -e "${RED}Error: Failed to create directory $(dirname "$INSTALL_PATH")${NC}"; exit 1; }
     
-    local src_file="${(%):-%x}"
-    if [[ -f "$src_file" ]]; then
-        cp "$src_file" "$INSTALL_PATH" || { echo -e "${RED}Error: Failed to copy $src_file to $INSTALL_PATH${NC}"; exit 1; }
+    if [[ -f "$SOURCE_FILE" ]]; then
+        cp "$SOURCE_FILE" "$INSTALL_PATH" || { echo -e "${RED}Error: Failed to copy $SOURCE_FILE to $INSTALL_PATH${NC}"; exit 1; }
     else
         # Piped installation fallback (e.g., curl | zsh)
         echo -e "${YELLOW}Installing from GitHub...${NC}"
@@ -217,21 +219,30 @@ remove_keys() {
 zmodload zsh/zparseopts 2>/dev/null || true
 
 # Check if zparseopts is available
-if ! command -v zparseopts >/dev/null; then
-    echo -e "${RED}Error: zparseopts is not available in your zsh installation.${NC}"
-    echo -e "This usually indicates a broken or incomplete zsh environment."
-    echo -e "Please check your zsh installation or run Keystone without arguments."
-    exit 1
+if type zparseopts >/dev/null 2>&1; then
+    zparseopts -D -E \
+        h=help -help=help \
+        -install=install \
+        -remove=remove \
+        -list=list \
+        -pack=pack \
+        -restore=restore \
+        -wipe=wipe
+else
+    # Fallback for environments without zparseopts
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help) help=1; shift ;;
+            --install) install=1; shift ;;
+            --remove) remove=1; shift ;;
+            --list) list=1; shift ;;
+            --pack) pack=1; shift ;;
+            --restore) restore=1; shift ;;
+            --wipe) wipe=1; shift ;;
+            *) shift ;;
+        esac
+    done
 fi
-
-zparseopts -D -E \
-    h=help -help=help \
-    -install=install \
-    -remove=remove \
-    -list=list \
-    -pack=pack \
-    -restore=restore \
-    -wipe=wipe
 
 if [[ -n "$help" ]]; then print_help; exit 0; fi
 if [[ -n "$install" ]]; then install_keystone; fi
