@@ -81,7 +81,7 @@ remove_keystone() {
 
 print_header() {
     clear
-    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager${NC}"
+    echo -e "${CYAN}${BOLD}🔑 KEYSTONE: Private Key Manager (v1.1-INJECTION)${NC}"
     echo -e "${CYAN}Build Time: $(date +'%Y-%m-%d %H:%M:%S')${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 }
@@ -184,6 +184,9 @@ mount_dmg() {
         # We temporarily add the password to the Keychain so hdiutil can find it natively.
         # This is the most robust way to handle passphrases on macOS.
         security add-generic-password -a "$USER" -s "$DMG_NAME" -w "$passphrase" -U
+        
+        # Give the Keychain a moment to register the change
+        sleep 1
         
         echo -e "${CYAN}Attempting to mount with provided passphrase...${NC}"
         hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -quiet
