@@ -1,17 +1,14 @@
 # 🔑 Keystone: Private Key Manager
 
-A colorful, interactive, and secure way to manage your private SSH keys across macOS devices using an encrypted iCloud-synced DMG.
+Manage private SSH keys across macOS devices using an encrypted, iCloud-synced disk image (DMG).
 
 ## ✨ Features
-- **iCloud Sync**: Uses an encrypted DMG (`keystone.dmg`) stored in your iCloud Drive.
+
+- **iCloud Storage**: Uses an encrypted DMG stored in your iCloud Drive.
 - **Biometric Security**: Integrated with **Touch ID** via macOS Local Authentication.
-- **Keychain Integration**: Seamlessly unlocks your DMG using your Apple Keychain.
-- **CLI & Interactive**: Supports both a beautiful menu and direct command-line arguments.
-- **XDG Compliant**: Installs to `~/.local/bin`.
+- **Keychain Integration**: Unlocks DMG using Apple Keychain.
 
 ## 🚀 Quick Install
-
-Install directly to your user binary directory:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mabino/keystone/main/keystone | zsh -s -- --install
@@ -20,7 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/mabino/keystone/main/keystone | zsh
 ## 🛠 Usage
 
 ### Interactive Menu
-Simply run:
+
 ```bash
 keystone
 ```
@@ -35,20 +32,6 @@ keystone
 | `--pack` | Pack local keys to iCloud and exit |
 | `--restore` | Restore keys to this device and exit |
 | `--wipe` | Wipe stored keys (Dangerous!) |
-
-## 📱 Native macOS App
-
-A full SwiftUI desktop implementation is available in the `keystone-app` directory.
-
-### Build & Run
-```bash
-cd keystone-app
-./scripts/build.zsh
-./scripts/run.zsh
-```
-
-## 🏗 Development
-This project uses **ShellCheck** via GitHub Actions to ensure script quality. Note that zsh scripts are currently excluded from full linting as ShellCheck primarily supports sh/bash.
 
 ## 🗑 Removal
 ```bash
