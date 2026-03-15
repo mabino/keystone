@@ -36,8 +36,19 @@ keystone
 | `--restore` | Restore keys to this device and exit |
 | `--wipe` | Wipe stored keys (Dangerous!) |
 
+## 📱 Native macOS App
+
+A full SwiftUI desktop implementation is available in the `keystone-app` directory.
+
+### Build & Run
+```bash
+cd keystone-app
+./scripts/build.zsh
+./scripts/run.zsh
+```
+
 ## 🏗 Development
-This project uses **ShellCheck** via GitHub Actions to ensure script quality.
+This project uses **ShellCheck** via GitHub Actions to ensure script quality. Note that zsh scripts are currently excluded from full linting as ShellCheck primarily supports sh/bash.
 
 ## 🗑 Removal
 ```bash

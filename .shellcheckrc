@@ -1,0 +1,3 @@
+# ShellCheck configuration file
+# Ignore "ShellCheck only supports sh/bash/..." for zsh scripts
+disable=SC1071

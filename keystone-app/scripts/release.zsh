@@ -2,7 +2,7 @@
 set -e
 
 if [[ -z "$1" ]]; then
-    echo "Usage: ./release.sh <version>"
+    echo "Usage: ./release.zsh <version>"
     exit 1
 fi
 
