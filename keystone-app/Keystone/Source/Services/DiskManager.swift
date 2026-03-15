@@ -74,6 +74,12 @@ class DiskManager {
         let tempDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("keystone_tmp")
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
+        // Add README to the DMG if it exists in the current directory (project root)
+        let readmeUrl = URL(fileURLWithPath: "README.md")
+        if FileManager.default.fileExists(atPath: readmeUrl.path) {
+            try? FileManager.default.copyItem(at: readmeUrl, to: tempDir.appendingPathComponent("README.md"))
+        }
+        
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
         process.arguments = [

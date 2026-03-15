@@ -152,6 +152,12 @@ if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e
 init_dmg() {
     echo -e "${YELLOW}Creating new encrypted DMG (Read/Write)...${NC}"
     mkdir -p /tmp/keystone_tmp
+    
+    # Add README to the DMG if it exists
+    if [[ -f "README.md" ]]; then
+        cp "README.md" /tmp/keystone_tmp/
+    fi
+
     # We let hdiutil prompt for the password so the user can confirm it (asks twice)
     if hdiutil create -size 10m -fs HFS+ -volname Keystone -encryption AES-256 -srcfolder /tmp/keystone_tmp -format UDRW "$DMG_PATH"; then
         rm -rf /tmp/keystone_tmp
